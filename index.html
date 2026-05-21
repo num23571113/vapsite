@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자전거 헬멧 착용 감지 AI 시스템</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --success-color: #2ecc71;
+            --danger-color: #e74c3c;
+        }
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: #f5f6fa;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: var(--primary-color);
+            margin-bottom: 25px;
+        }
+        /* API Key 입력창 영역 (더 심플하게 변경) */
+        .config-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #e1e8ed;
+        }
+        .config-section h3 { margin-top: 0; color: #555; font-size: 16px; }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        .input-group input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        /* 업로드 영역 */
+        .upload-zone {
+            border: 2px dashed #3498db;
+            padding: 40px 20px;
+            text-align: center;
+            border-radius: 8px;
+            background: #fdfdfd;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .upload-zone:hover {
+            background: #f1f7fc;
+        }
+        #fileInput { display: none; }
+        
+        /* 결과 출력 영역 */
+        .result-container {
+            margin-top: 25px;
+            text-align: center;
+        }
+        #canvasContainer {
+            position: relative;
+            display: inline-block;
+            max-width: 100%;
+            margin-top: 15px;
+        }
+        #resultCanvas {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: none;
+        }
+        /* 경고 및 알림 메시지 */
+        .alert-box {
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 20px;
+            display: none;
+            line-height: 1.5;
+        }
+        .alert-box.safe {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-box.danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            animation: pulse 1.5s infinite;
+        }
+        .loading {
+            display: none;
+            color: #3498db;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>⛑️ 자전거 헬멧 착용 판별 AI</h1>
+
+    <div class="config-section">
+        <h3>Roboflow 인증 설정</h3>
+        <div class="input-group">
+            <input type="text" id="apiKey" placeholder="Roboflow Private/Publishable API Key (rf_...)를 입력하세요" value="">
+        </div>
+        <small style="color: #666; display:block; margin-top:5px;">
+            * 연결된 AI 모델: <v style="color:#3498db; font-weight:bold;">bicycle-helmet-s5ikm-qampf (버전 1)</v>
+        </small>
+    </div>
+
+    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+        <p style="font-size: 16px; font-weight: bold; margin: 0;">📸 이곳을 클릭하여 자전거 타는 사람 사진을 업로드하세요.</p>
+        <p style="color: #888; font-size: 13px; margin-top: 5px;">업로드 즉시 AI 분석이 시작됩니다.</p>
+        <input type="file" id="fileInput" accept="image/*">
+    </div>
+
+    <div class="result-container">
+        <div id="loading" class="loading">AI가 헬멧 착용 여부를 분석하고 있습니다...</div>
+        
+        <div id="alertBox" class="alert-box"></div>
+        
+        <div id="canvasContainer">
+            <canvas id="resultCanvas"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 여기에 사용자의 로보플로우 모델 정보를 고정했습니다.
+    const MODEL_ID = "bicycle-helmet-s5ikm-qampf";
+    const VERSION = "1";
+
+    const fileInput = document.getElementById('fileInput');
+    const resultCanvas = document.getElementById('resultCanvas');
+    const ctx = resultCanvas.getContext('2d');
+    const loading = document.getElementById('loading');
+    const alertBox = document.getElementById('alertBox');
+
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // 화면 초기화
+        alertBox.style.display = 'none';
+        resultCanvas.style.display = 'none';
+        loading.style.display = 'block';
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                // 캔버스 크기를 이미지 원본 크기로 설정
+                resultCanvas.width = img.width;
+                resultCanvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+                resultCanvas.style.display = 'inline-block';
+
+                // base64 데이터 추출 (헤더 부분 제거)
+                const base64Data = event.target.result.split(',')[1];
+                sendToRoboflow(base64Data, img);
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(file);
+    });
+
+    function sendToRoboflow(base64Data, originalImg) {
+        const apiKey = document.getElementById('apiKey').value.trim();
+
+        if(!apiKey) {
+            alert("Roboflow API Key를 입력해주세요!");
+            loading.style.display = 'none';
+            return;
+        }
+
+        // 고정된 모델 정보를 기반으로 API URL 생성
+        const url = `https://detect.roboflow.com/${MODEL_ID}/${VERSION}?api_key=${apiKey}`;
+
+        fetch(url, {
+            method: "POST",
+            body: base64Data,
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+            if(data.predictions) {
+                drawPredictions(data.predictions, originalImg);
+            } else {
+                alert("AI 인식에 실패했습니다. API 키나 모델 활성화 여부를 확인해주세요.");
+            }
+        })
+        .catch(err => {
+            loading.style.display = 'none';
+            console.error(err);
+            alert("서버 통신 중 오류가 발생했습니다.");
+        });
+    }
+
+    function drawPredictions(predictions, img) {
+        ctx.drawImage(img, 0, 0);
+
+        let helmetCount = 0;
+        let noHelmetCount = 0;
+
+        predictions.forEach(pred => {
+            const width = pred.width;
+            const height = pred.height;
+            const x = pred.x - width / 2;
+            const y = pred.y - height / 2;
+            const className = pred.class.toLowerCase();
+            const confidence = Math.round(pred.confidence * 100);
+
+            // [클래스 판별 로직] 
+            // 클래스 이름에 'no'가 들어가지 않고 'helmet'이나 'wear'가 포함되면 착용으로 판단
+            let color = "#e74c3c"; // 미착용 기본값 (빨간색)
+            if (className.includes("no") === false && (className.includes("helmet") || className.includes("wear"))) {
+                color = "#2ecc71"; // 착용 (초록색)
+                helmetCount++;
+            } else {
+                noHelmetCount++;
+            }
+
+            // 박스 그리기
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(4, img.width / 200);
+            ctx.strokeRect(x, y, width, height);
+
+            // 텍스트 배경 그리기
+            ctx.fillStyle = color;
+            const fontSize = Math.max(14, img.width / 50);
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const text = `${pred.class} (${confidence}%)`;
+            const textWidth = ctx.measureText(text).width;
+            
+            ctx.fillRect(x, y - fontSize - 5, textWidth + 10, fontSize + 5);
+
+            // 텍스트 쓰기
+            ctx.fillStyle = "white";
+            ctx.fillText(text, x + 5, y - 5);
+        });
+
+        // 📢 화면 경고 문구 출력 시스템
+        alertBox.style.display = 'block';
+        if (noHelmetCount > 0) {
+            alertBox.className = "alert-box danger";
+            alertBox.innerHTML = `⚠️ 경고: 헬멧을 착용하지 않은 사람이 ${noHelmetCount}명 감지되었습니다!<br><span style="font-size:15px; font-weight:normal;">부상 위험이 크니 안전을 위해 자전거 헬멧을 꼭 착용해 주세요!</span>`;
+        } else if (helmetCount > 0 && noHelmetCount === 0) {
+            alertBox.className = "alert-box safe";
+            alertBox.innerHTML = `✅ 안전: 모든 인원이 헬멧을 착용하고 있습니다. 안전 주행하세요!`;
+        } else {
+            alertBox.className = "alert-box";
+            alertBox.style.backgroundColor = "#e2e3e5";
+            alertBox.style.color = "#383d41";
+            alertBox.innerText = "🔍 자전거 이용자나 헬멧을 감지하지 못했습니다.";
+        }
+    }
+</script>
+
+</body>
+</html>
