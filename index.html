@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>자전거 헬멧 착용 감지 AI 시스템 (Workflow)</title>
+    <title>자전거 헬멧 착용 감지 AI 시스템 (최종 수정본)</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -72,11 +72,12 @@
         .alert-box {
             padding: 15px;
             border-radius: 8px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
             margin-top: 20px;
             display: none;
             line-height: 1.5;
+            text-align: left;
         }
         .alert-box.safe {
             background-color: #d4edda;
@@ -87,7 +88,6 @@
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
-            animation: pulse 1.5s infinite;
         }
         .loading {
             display: none;
@@ -95,27 +95,22 @@
             font-weight: bold;
             margin-top: 15px;
         }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.02); }
-            100% { transform: scale(1); }
-        }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>⛑️ 자전거 헬멧 착용 판별 AI</h1>
-    <div class="subtitle">Roboflow Serverless Workflow 시스템 연동 완료</div>
+    <div class="subtitle">Roboflow Serverless Workflow API 시스템 (정밀 수정본)</div>
 
     <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
         <p style="font-size: 16px; font-weight: bold; margin: 0;">📸 이곳을 클릭하여 자전거 타는 사람 사진을 업로드하세요.</p>
-        <p style="color: #888; font-size: 13px; margin-top: 5px;">이미지를 업로드하면 실시간으로 AI 분석을 요청합니다.</p>
+        <p style="color: #888; font-size: 13px; margin-top: 5px;">이미지를 업로드하면 즉시 AI 워크플로우 분석을 시작합니다.</p>
         <input type="file" id="fileInput" accept="image/*">
     </div>
 
     <div class="result-container">
-        <div id="loading" class="loading">Roboflow 워크플로우가 데이터를 분석 중입니다...</div>
+        <div id="loading" class="loading">Roboflow 워크플로우 분석 중...</div>
         
         <div id="alertBox" class="alert-box"></div>
         
@@ -126,9 +121,10 @@
 </div>
 
 <script>
-    // 제공해주신 파이썬 설정값을 그대로 반영했습니다.
-    const API_URL = "https://serverless.roboflow.com";
-    const API_KEY = "cK2x4oNT9ymJUcWpR4nb";
+    // [설정 영역] 회원님의 고유 정보입니다.
+    // ※ 주의: 파이썬 예시에 써있던 "cK2x4oNT9ymJUcWpR4nb"는 작동하지 않는 가짜 키일 수 있으니, 
+    // 안된다면 본인의 진짜 API Key(대개 rf_로 시작하거나 긴 문자열)로 변경해 주세요.
+    const API_KEY = "cK2x4oNT9ymJUcWpR4nb"; 
     const WORKSPACE = "cnsh31_3301_";
     const WORKFLOW_ID = "detect-and-classify";
 
@@ -155,7 +151,6 @@
                 ctx.drawImage(img, 0, 0);
                 resultCanvas.style.display = 'inline-block';
 
-                // base64 순수 데이터만 추출
                 const base64Data = event.target.result.split(',')[1];
                 sendToRoboflowWorkflow(base64Data, img);
             }
@@ -165,14 +160,17 @@
     });
 
     function sendToRoboflowWorkflow(base64Data, originalImg) {
-        // 워크플로우 전용 API URL 구조 생성
-        const url = `${API_URL}/workflows/${WORKSPACE}/${WORKFLOW_ID}?api_key=${API_KEY}`;
+        // [수정 포인트 1] 워크스페이스가 앞으로 오도록 올바른 URL 주소 체계로 변경
+        const url = `https://serverless.roboflow.com/${WORKSPACE}/workflows/${WORKFLOW_ID}`;
 
-        // 워크플로우는 JSON 형식으로 base64 객체를 감싸서 보내야 합니다.
+        // [수정 포인트 2] 규격에 맞는 완벽한 JSON 페이로드 구성
         const payload = {
-            "image": {
-                "type": "base64",
-                "value": base64Data
+            "api_key": API_KEY,
+            "inputs": {
+                "image": {
+                    "type": "base64",
+                    "value": base64Data
+                }
             }
         };
 
@@ -183,47 +181,47 @@
             },
             body: JSON.stringify(payload)
         })
-        .then(response => response.json())
+        .then(response => {
+            // [수정 포인트 3] 서버가 에러를 뱉으면 화면에 상세 내용을 띄우도록 가로채기
+            if (!response.ok) {
+                return response.text().then(text => {
+                    throw new Error(`[HTTP ${response.status}] 서버 메시지: ${text}`);
+                });
+            }
+            return response.json();
+        })
         .then(data => {
             loading.style.display = 'none';
-            console.log("AI Response Data:", data); // 개발자 도구(F12) 콘솔에서 구조 확인 가능
+            console.log("Roboflow Response:", data);
 
-            // 워크플로우 결과에서 유연하게 predictions(예측 배열)를 찾는 함수 호출
             const predictions = findPredictions(data);
 
             if (predictions && predictions.length > 0) {
                 drawPredictions(predictions, originalImg);
             } else {
-                // 검출된 박스가 없을 때
                 alertBox.style.display = 'block';
                 alertBox.className = "alert-box";
                 alertBox.style.backgroundColor = "#e2e3e5";
                 alertBox.style.color = "#383d41";
-                alertBox.innerText = "🔍 이미지에서 인식된 객체가 없습니다. 다른 사진으로 시도해 보세요.";
+                alertBox.innerText = "🔍 이미지에서 헬멧이나 사람 객체를 검출하지 못했습니다. 다른 사진으로 테스트해 보세요.";
             }
         })
         .catch(err => {
             loading.style.display = 'none';
+            // 화면에 구체적인 에러를 빨간색으로 표기
+            alertBox.style.display = 'block';
+            alertBox.className = "alert-box danger";
+            alertBox.innerHTML = `❌ 로보플로우 통신 실패!<br><span style="font-size:13px; font-weight:normal; font-family:monospace; word-break:break-all;">${err.message}</span><br><br><small style="font-weight:normal; color:#555;">* 해결책: 만약 HTTP 401이나 403 에러가 뜬다면 코드 104번째 줄의 API_KEY가 진짜 본인 키가 맞는지 확인해 주세요.</small>`;
             console.error(err);
-            alert("서버 통신 중 오류가 발생했습니다. Console 창을 확인하세요.");
         });
     }
 
-    // 워크플로우 복잡한 출력 구조 속에서 'predictions' 배열을 자동으로 찾아내는 스마트 탐색기
+    // 결과 데이터 구조에서 예측값(predictions) 배열을 찾아내는 재귀 함수
     function findPredictions(obj) {
         if (!obj || typeof obj !== 'object') return null;
+        if (obj.predictions && Array.isArray(obj.predictions)) return obj.predictions;
+        if (Array.isArray(obj) && obj.length > 0 && obj[0].x !== undefined) return obj;
         
-        // 1. 객체 내부에 predictions 키가 있고 배열인 경우 바로 반환
-        if (obj.predictions && Array.isArray(obj.predictions)) {
-            return obj.predictions;
-        }
-        
-        // 2. 현재 객체 자체가 이미 predictions 형태의 배열인 경우
-        if (Array.isArray(obj) && obj.length > 0 && obj[0].x !== undefined) {
-            return obj;
-        }
-
-        // 3. 하위 구조 재귀 탐색 (워크플로우 출력 블록 이름이 무엇이든 찾아냄)
         for (let key in obj) {
             if (obj.hasOwnProperty(key)) {
                 let found = findPredictions(obj[key]);
@@ -235,59 +233,49 @@
 
     function drawPredictions(predictions, img) {
         ctx.drawImage(img, 0, 0);
-
         let helmetCount = 0;
         let noHelmetCount = 0;
 
         predictions.forEach(pred => {
-            // 좌표 정보 추출
             const width = pred.width;
             const height = pred.height;
             const x = pred.x - width / 2;
             const y = pred.y - height / 2;
             
-            // 클래스 이름 판별 (소문자 변환)
             const className = (pred.class || pred.label || "").toLowerCase();
             const confidence = Math.round((pred.confidence || 0) * 100);
 
-            // 헬멧 착용 여부 판별 로직
-            let color = "#e74c3c"; // 기본값: 미착용 (빨간색)
+            let color = "#e74c3c"; // 미착용 기본값 (빨강)
             
-            // 클래스명에 'no'가 없고, 'helmet'이나 'wear' 등이 포함되면 착용으로 판단
-            if (className.includes("no") === false && (className.includes("helmet") || className.includes("wear") || className === "head_with_helmet")) {
-                color = "#2ecc71"; // 착용 (초록색)
+            if (className.includes("no") === false && (className.includes("helmet") || className.includes("wear") || className.includes("head_with_helmet"))) {
+                color = "#2ecc71"; // 착용 확인 (초록)
                 helmetCount++;
             } else {
                 noHelmetCount++;
             }
 
-            // Canvas 박스 시각화
             ctx.strokeStyle = color;
             ctx.lineWidth = Math.max(4, img.width / 200);
             ctx.strokeRect(x, y, width, height);
 
-            // 텍스트 라벨 배경
             ctx.fillStyle = color;
             const fontSize = Math.max(14, img.width / 50);
             ctx.font = `bold ${fontSize}px sans-serif`;
             const text = `${pred.class || "Object"} (${confidence}%)`;
             const textWidth = ctx.measureText(text).width;
-            
             ctx.fillRect(x, y - fontSize - 5, textWidth + 10, fontSize + 5);
 
-            // 텍스트 출력
             ctx.fillStyle = "white";
             ctx.fillText(text, x + 5, y - 5);
         });
 
-        // 📢 안내 및 경고 메시지 출력 시스템
         alertBox.style.display = 'block';
         if (noHelmetCount > 0) {
             alertBox.className = "alert-box danger";
-            alertBox.innerHTML = `⚠️ 경고: 헬멧을 착용하지 않은 상태가 감지되었습니다!<br><span style="font-size:15px; font-weight:normal;">안전한 주행을 위해 자전거 헬멧을 반드시 착용해 주세요!</span>`;
+            alertBox.innerHTML = `⚠️ 경고: 헬멧 미착용자가 감지되었습니다!<br><span style="font-size:14px; font-weight:normal;">안전을 위해 반드시 자전거 헬멧을 착용해 주세요!</span>`;
         } else if (helmetCount > 0 && noHelmetCount === 0) {
             alertBox.className = "alert-box safe";
-            alertBox.innerHTML = `✅ 안전: 헬멧 착용이 확인되었습니다. 안전 운행하세요!`;
+            alertBox.innerHTML = `✅ 안전: 모든 인원의 헬멧 착용이 확인되었습니다. 안전 운행하세요!`;
         }
     }
 </script>
